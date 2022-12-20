@@ -19,7 +19,7 @@ private:
 
 class FridgeDB::Connection {
 public:
-	Connection(sqlite3 *raw_conn);
+	friend class FridgeDB;
 
 	Connection(Connection &&) = default;
 	Connection &operator=(Connection &&) = default;
@@ -29,6 +29,10 @@ public:
 	std::string Query(const std::string &request);
 
 	~Connection();
+
+protected:
+	Connection(sqlite3 *raw_conn);
+
 private:
 	sqlite3 *m_conn;
 };

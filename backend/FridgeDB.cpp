@@ -1,4 +1,5 @@
 #include "FridgeDB.h"
+#include "nlohmann/json.hpp"
 #include <iostream>
 #include <optional>
 #include <sqlite3.h>

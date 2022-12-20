@@ -9,7 +9,7 @@
 
 class WebSocketIF {
 public:
-	WebSocketIF(FridgeDB &db, int numWSWorkerThreads = 1, int port = 32000);
+	WebSocketIF(FridgeDB &db, int numWSWorkerThreads = 0, int port = 32000);
 
 	bool is_ok() const { return m_ok; }
 

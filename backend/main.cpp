@@ -9,7 +9,7 @@
 int main()
 {
 	FridgeDB db("nyyla.db");
-	WebSocketIF wwfridge(db);
+	WebSocketIF wwfridge(db, 1);
 	std::cout << "Hello world! " << (wwfridge.is_ok() ? "OK" : "Not OK") << std::endl;
 	wwfridge.WaitThreads();
 	return 0;

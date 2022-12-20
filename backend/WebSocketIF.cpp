@@ -8,6 +8,9 @@ WebSocketIF::WebSocketIF(FridgeDB &fridgeDB, int numWSWorkerThreads, int port)
 {
 	int rv, i;
 
+	if (numWSWorkerThreads <= 0)
+		numWSWorkerThreads = std::thread::hardware_concurrency();
+
 	for (i = 0; i < numWSWorkerThreads; i++) {
 		std::optional<FridgeDB::Connection> conn = fridgeDB.GetNewConnection();
 
@@ -32,10 +35,10 @@ uWS::App WebSocketIF::CreateWSWorker(FridgeDB::Connection dbConn)
 
 	return uWS::App().ws<PerSocketData>("/query", {
 		.message = [dbConn = std::move(dbConn)]
-			(auto *ws, std::string_view msgView, uWS::OpCode opcode) mutable
+			(auto *ws, std::string_view msgView, uWS::OpCode opCode) mutable
 		{
 			const std::string msg(msgView);
-			std::cout << "DB responds: " << dbConn.Query(msg) << std::endl;
+			ws->send(dbConn.Query(msg), opCode, true);
 		},
 	});
 }

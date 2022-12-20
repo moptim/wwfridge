@@ -14,6 +14,7 @@ target_include_directories(
 	wwfridge_backend PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/uWebSockets/src/
 	${CMAKE_CURRENT_SOURCE_DIR}/uWebSockets/uSockets/src/
+	${CMAKE_CURRENT_SOURCE_DIR}/json/include/
 )
 
 find_package(SQLite3 REQUIRED)
