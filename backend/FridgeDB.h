@@ -1,6 +1,7 @@
 #ifndef FRIDGEDB_H_
 #define FRIDGEDB_H_
 
+#include "FridgeDBHandlers.h"
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 class FridgeDB {
 public:
 	class Connection;
+	class JSONStaticReplies;
 
 	FridgeDB(std::string filename);
 
@@ -39,11 +41,39 @@ private:
 	void CompileStatements();
 	void MaybeInitializeDB();
 
+	std::string PerformDBRequest(const nlohmann::json &request);
+
 	void DestroyStatements();
 
 	sqlite3 *m_conn;
 	std::vector<sqlite3_stmt *> m_initializers;
-	std::vector<std::pair<std::string, sqlite3_stmt *>> m_statements;
+	// std::vector<std::pair<std::string, sqlite3_stmt *>> m_statements;
+
+	std::vector<FridgeDBHandlers::FridgeDBHandler> m_statements;
+};
+
+class FridgeDB::JSONStaticReplies {
+public:
+	friend class FridgeDB::Connection;
+
+protected:
+	JSONStaticReplies(const JSONStaticReplies &)	= delete;
+	void operator=(const JSONStaticReplies &)	= delete;
+
+	static JSONStaticReplies &GetInstance();
+
+	const std::string &GetNotJSONError() const {
+		return m_notJSONError;
+	}
+	const std::string &GetNoSuchRequestError() const {
+		return m_noSuchRequestError;
+	}
+
+private:
+	JSONStaticReplies();
+
+	std::string m_notJSONError;
+	std::string m_noSuchRequestError;
 };
 
 #endif

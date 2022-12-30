@@ -41,19 +41,19 @@ FridgeDB::Connection::Connection(sqlite3 *raw_conn)
 sqlite3_stmt *FridgeDB::Connection::CompileSingleStatement(
 	const std::string &statementString)
 {
-	sqlite3_stmt *statement;
+	sqlite3_stmt *raw_stmt;
 
 	int rv = sqlite3_prepare_v2(m_conn,
 	                            statementString.c_str(),
 	                            statementString.size(),
-	                            &statement,
+	                            &raw_stmt,
 	                            nullptr);
 
 	if (rv != SQLITE_OK) {
-		sqlite3_finalize(statement);
-		statement = nullptr;
+		sqlite3_finalize(raw_stmt);
+		raw_stmt = nullptr;
 	}
-	return statement;
+	return raw_stmt;
 }
 
 void FridgeDB::Connection::CompileStatements()
@@ -76,9 +76,14 @@ void FridgeDB::Connection::CompileStatements()
 		const std::string command(i.command);
 		const std::string statementString(i.statementString);
 
-		sqlite3_stmt *statement = CompileSingleStatement(statementString);
-		if (statement != nullptr)
-			m_statements.push_back(std::make_pair(command, statement));
+		sqlite3_stmt *raw_stmt = CompileSingleStatement(statementString);
+		if (raw_stmt != nullptr)
+			m_statements.push_back({
+				.command = i.command,
+				.BindParams = i.BindParams,
+				.RowCallback = i.RowCallback,
+				.raw_stmt = raw_stmt,
+			});
 		else
 			std::cerr << "Failed to compile statement " <<
 				command << ": " << sqlite3_errmsg(m_conn) <<
@@ -88,11 +93,11 @@ void FridgeDB::Connection::CompileStatements()
 
 void FridgeDB::Connection::MaybeInitializeDB()
 {
-	for (auto &stmt : m_initializers) {
+	for (auto &raw_stmt : m_initializers) {
 		int rv;
 
 		for (;;) {
-			rv = sqlite3_step(stmt);
+			rv = sqlite3_step(raw_stmt);
 			switch (rv) {
 			case SQLITE_BUSY:
 				// Retry after busy handler has done its thing
@@ -106,29 +111,101 @@ void FridgeDB::Connection::MaybeInitializeDB()
 			}
 		}
 		out_reset:
-		sqlite3_reset(stmt);
+		sqlite3_reset(raw_stmt);
 	}
 }
 
 void FridgeDB::Connection::DestroyStatements()
 {
+	for (auto &initializer : m_initializers) {
+		sqlite3_finalize(initializer);
+	}
 	for (auto &i : m_statements) {
-		sqlite3_stmt *statement = i.second;
-		sqlite3_finalize(statement);
+		sqlite3_finalize(i.raw_stmt);
 	}
 }
 
 std::string FridgeDB::Connection::Query(const std::string &request)
 {
+	JSONStaticReplies &replies = JSONStaticReplies::GetInstance();
+
 	nlohmann::json req = nlohmann::json::parse(request, nullptr, false, true);
 	if (req.is_discarded())
-		return std::string("not valid json lol (todo)");
+		return replies.GetNotJSONError();
 
-	return std::string("FridgeDB esponding to query: ") + request;
+	return PerformDBRequest(req);
+}
+
+std::string FridgeDB::Connection::PerformDBRequest(const nlohmann::json &request)
+{
+	JSONStaticReplies &replies = JSONStaticReplies::GetInstance();
+	sqlite3_stmt *raw_stmt;
+
+	const auto &requestNameIt = request.find("request");
+	if (requestNameIt == request.cend())
+		return replies.GetNoSuchRequestError();
+
+	const std::string &requestName = *requestNameIt;
+
+	auto statement = std::find_if(m_statements.begin(), m_statements.end(),
+		[requestName](const auto &statement) {
+			return statement.command == requestName;
+		}
+	);
+	if (statement == m_statements.end())
+		return replies.GetNoSuchRequestError();
+
+	raw_stmt = statement->raw_stmt;
+	statement->BindParams(raw_stmt);
+
+	nlohmann::json reply({
+		{"success", "false"},
+	});
+	for (;;) {
+		int rv = sqlite3_step(raw_stmt);
+		switch (rv) {
+		case SQLITE_BUSY:
+			continue;
+		case SQLITE_MISUSE:
+			std::cerr << "SQLITE_MISUSE on " << requestName <<
+				std::endl;
+			goto out_reset;
+		case SQLITE_DONE:
+			goto out_success;
+		case SQLITE_ROW:
+			nlohmann::json jsonizedRow = statement->RowCallback(raw_stmt);
+			if (reply.find("values") == reply.cend())
+				reply["values"] = nlohmann::json::array();
+
+			reply["values"].push_back(jsonizedRow);
+			break;
+		};
+	}
+	out_success:
+	reply["success"] = true;
+
+	out_reset:
+	sqlite3_reset(raw_stmt);
+	return nlohmann::to_string(reply);
 }
 
 FridgeDB::Connection::~Connection()
 {
 	if (m_conn != nullptr)
 		sqlite3_close(m_conn);
+}
+
+FridgeDB::JSONStaticReplies::JSONStaticReplies()
+{
+	nlohmann::json notJSONError = {{"message", "error: not JSON"}};
+	nlohmann::json noSuchRequestError = {{"message", "error: no such request"}};
+
+	m_notJSONError = nlohmann::to_string(notJSONError);
+	m_noSuchRequestError = nlohmann::to_string(noSuchRequestError);
+}
+
+FridgeDB::JSONStaticReplies &FridgeDB::JSONStaticReplies::GetInstance()
+{
+	static JSONStaticReplies instance;
+	return instance;
 }
