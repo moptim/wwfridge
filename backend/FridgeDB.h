@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 #include <sqlite3.h>
 
 class FridgeDB {
@@ -34,7 +35,15 @@ protected:
 	Connection(sqlite3 *raw_conn);
 
 private:
+	sqlite3_stmt *CompileSingleStatement(const std::string &statementString);
+	void CompileStatements();
+	void MaybeInitializeDB();
+
+	void DestroyStatements();
+
 	sqlite3 *m_conn;
+	std::vector<sqlite3_stmt *> m_initializers;
+	std::vector<std::pair<std::string, sqlite3_stmt *>> m_statements;
 };
 
 #endif
