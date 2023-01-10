@@ -8,14 +8,6 @@
 
 namespace FridgeDBHandlers {
 
-struct FridgeDBHandler {
-	std::string_view command;
-	std::string_view statementString;
-	std::function<int(sqlite3_stmt *)> BindParams;
-	std::function<nlohmann::json(sqlite3_stmt *)> RowCallback;
-	sqlite3_stmt *raw_stmt;
-};
-
 constexpr std::array<std::string_view, 4> initializers {
 	"CREATE TABLE IF NOT EXISTS ItemClasses("
 		"id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -24,59 +16,42 @@ constexpr std::array<std::string_view, 4> initializers {
 		"expireTime INTEGER);",
 
 	"CREATE TABLE IF NOT EXISTS ItemAmounts("
-		"itemId INTEGER,"
-		"amount INTEGER,"
+		"id INTEGER PRIMARY KEY AUTOINCREMENT,"
+		"itemClassId INTEGER,"
+		"amount REAL,"
 		"date INTEGER);",
 
 	"CREATE TABLE IF NOT EXISTS ShoppingList("
-		"itemId INTEGER,"
-		"amount INTEGER,"
+		"id INTEGER PRIMARY KEY AUTOINCREMENT,"
+		"itemClassId INTEGER,"
+		"amount REAL,"
 		"date INTEGER);",
 
 	"CREATE VIEW IF NOT EXISTS GetItemsInFridge("
-		"name, amount, date, expireDate) "
-	"AS SELECT class.name, object.amount, object.date, object.date + class.expireTime "
+		"id, name, amount, unit, date, expireDate) "
+	"AS SELECT object.id, class.name, object.amount, class.unit, object.date, object.date + class.expireTime "
 	"FROM ItemClasses as class "
-		"JOIN ItemAmounts as object ON class.id = object.itemId "
+		"JOIN ItemAmounts as object ON class.id = object.itemClassId "
 		"ORDER BY object.date + class.expireTime, class.name;",
 };
 
-const FridgeDBHandler getItemsInFridge = {
-	.command = "GetItemsInFridge",
-	.statementString = "SELECT * FROM GetItemsInFridge;",
-	.BindParams  = [](sqlite3_stmt *raw_stmt) -> int {
-		return 0;
-	},
-	.RowCallback = [](sqlite3_stmt *raw_stmt) -> nlohmann::json {
-		std::string name(reinterpret_cast<const char *>(sqlite3_column_text(raw_stmt, 0)));
-		float amount = sqlite3_column_double(raw_stmt, 1);
-		int date = sqlite3_column_int(raw_stmt, 2);
-		int expireDate = sqlite3_column_int(raw_stmt, 3);
+static const std::string_view beginTransactionStmtStr =
+	"BEGIN TRANSACTION;";
 
-		return nlohmann::json({
-			{"name",       name},
-			{"amount",     amount},
-			{"date",       date},
-			{"expireDate", expireDate},
-		});
-	},
-};
+static const std::string_view endTransactionStmtStr =
+	"END TRANSACTION;";
 
-const FridgeDBHandler addItemToFridge = {
-	.command = "AddItemToFridge",
-	.statementString = "hello world",
-};
+static const std::string_view getItemsInFridgeStmtStr =
+	"SELECT * FROM GetItemsInFridge;";
 
-const FridgeDBHandler delItemInFridge = {
-	.command = "DelItemInFridge",
-	.statementString = "hello world",
-};
+static const std::string_view addItemsToFridgeInsertClassStmtStr =
+	"INSERT OR IGNORE INTO ItemClasses (name, unit, expireTime) VALUES (?, ?, ?);";
 
-const std::array<FridgeDBHandler, 3> handlers {
-	getItemsInFridge,
-	addItemToFridge,
-	delItemInFridge,
-};
+static const std::string_view addItemsToFridgeUpdateClassStmtStr =
+	"UPDATE ItemClasses SET unit = ?, expireTime = ? WHERE name = ? RETURNING id;";
+
+static const std::string_view addItemsToFridgeInsertItemStmtStr =
+	"INSERT INTO ItemAmounts (itemClassId, amount, date) VALUES (?, ?, ?);";
 
 }
 
